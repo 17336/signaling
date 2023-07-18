@@ -1,6 +1,5 @@
 cmake_minimum_required(VERSION 3.8)
 project(signaling)
-include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/CMakeHelpers.cmake)
 
 set(WEBSOCKETPP_INCLUDE /usr/local/include/websocketpp)
 
