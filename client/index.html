@@ -14,6 +14,7 @@
         <input type="submit" value="sendmsg" onclick="sendmsg()" />
         <input type="text" id="Textarea" />
     </div>
+    <div id="stats-box"></div>
     <div id="videos">
         <video id="localVideo" autoplay muted playsinline></video>
         <video id="remoteVideo" autoplay playsinline></video>
@@ -201,6 +202,19 @@
                 pc.onaddstream = handleRemoteStreamAdded;
                 pc.onremovestream = handleRemoteStreamRemoved;
                 console.log('Created RTCPeerConnnection');
+
+                pc.onsignalingstatechange = (event) => {
+                    console.log("signalingState change to: ", pc.signalingState, event);
+                };
+                pc.oniceconnectionstatechange = (event) => {
+                    console.log("iceconnectionstate change to: ", pc.iceConnectionState, event);
+                };
+                pc.onconnectionstatechange = (event) => {
+                    console.log("connectionstate change to: ", pc.connectionState, event);
+                };
+                pc.onicegatheringstatechange = (event) => {
+                    console.log("icegatheringstate change to: ", pc.iceGatheringState, event);
+                };
             } catch (e) {
                 console.log('Failed to create PeerConnection, exception: ' + e.message);
                 alert('Cannot create RTCPeerConnection object.');
@@ -235,8 +249,34 @@
             console.log('Remote stream added.');
             remoteStream = event.stream;
             remoteVideo.srcObject = remoteStream;
-            remoteVideo.play();
-            console.log(remoteStream)
+            console.log("signalingState: ", pc.signalingState, ", iceConnectionState: ", pc.iceConnectionState, ", connectionState: ", pc.connectionState)
+            // add report
+            setInterval(() => {
+                pc.getStats(null).then((stats) => {
+                    let statsOutput = "";
+
+                    stats.forEach((report) => {
+                        statsOutput +=
+                            `<h2>Report: ${report.type}</h2>\n<strong>ID:</strong> ${report.id}<br>\n` +
+                            `<strong>Timestamp:</strong> ${report.timestamp}<br>\n`;
+
+                        // Now the statistics for this report; we intentionally drop the ones we
+                        // sorted to the top above
+
+                        Object.keys(report).forEach((statName) => {
+                            if (
+                                statName !== "id" &&
+                                statName !== "timestamp" &&
+                                statName !== "type"
+                            ) {
+                                statsOutput += `<strong>${statName}:</strong> ${report[statName]}<br>\n`;
+                            }
+                        });
+                    });
+
+                    document.querySelector("#stats-box").innerHTML = statsOutput;
+                });
+            }, 1000);
         }
 
         function handleRemoteStreamRemoved(event) {

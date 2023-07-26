@@ -37,6 +37,11 @@ void room::addPeer(int64_t pid) {
     pids_.insert(pid);
 }
 
+bool room::empty() {
+    lock_guard<mutex> lock(pids_mutex_);
+    return pids_.empty();
+}
+
 void room::removePeer(int64_t pid)
 {
     lock_guard<mutex> lock(pids_mutex_);

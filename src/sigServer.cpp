@@ -148,6 +148,7 @@ void sigServer::leftRoom(connection_hdl hdl, int64_t pid, int64_t rid)
     {
         lock_guard<mutex> rlock(room_lock_);
         rooms_[rid].removePeer(pid);
+        if (rooms_[rid].empty()) rooms_.erase(rid);
     }
 
     std::stringstream ss;

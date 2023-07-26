@@ -19,6 +19,7 @@ public:
     typedef websocketpp::lib::mutex mutex;
     void addPeer(int64_t pid);
     void removePeer(int64_t pid);
+    bool empty();
     room(int64_t id);
     room(const room & other);
     room& operator=(const room &);
