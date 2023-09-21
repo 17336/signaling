@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.8)
 project(signaling)
-
+set(CMAKE_CXX_STANDARD 14)
 
 file (GLOB_RECURSE SOURCE_FILES src/*.cpp)
 file (GLOB_RECURSE HEADER_FILES src/*.hpp)
@@ -34,7 +34,7 @@ find_package(log4cxx REQUIRED)
 if(log4cxx_FOUND)
 	message("found log4cxx, include dir is ${loc4cxx_INCLUDE_DIR}")
     target_include_directories(signaling PUBLIC $<TARGET_PROPERTY:log4cxx,INTERFACE_INCLUDE_DIRECTORIES>)
-    target_link_libraries( signaling PRIVATE log4cxx)
+    target_link_libraries(signaling PRIVATE log4cxx)
 else()
     message(ERROR "loc4cxx not found")
 endif()

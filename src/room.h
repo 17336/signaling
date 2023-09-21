@@ -1,36 +1,45 @@
 #ifndef _ROOM_H_
 #define _ROOM_H_
 
+#include <cstdint>
+#include <log4cxx/basicconfigurator.h>
+
+#include <memory>
+#include <mutex>
+#include <string>
 #include <unordered_map>
 #include <unordered_set>
-#include <string>
 #include <websocketpp/config/asio_no_tls.hpp>
 #include <websocketpp/server.hpp>
-#include <mutex>
-#include <log4cxx/basicconfigurator.h>  
+
 #include "peer.h"
+#include "type.h"
+#include "session.h"
 
+class RoomManager;
 
-class room
-{
-    friend class sigServer;
+class Room {
+    friend class RoomManager;
+
 public:
-    typedef websocketpp::connection_hdl connection_hdl;
-    typedef websocketpp::lib::mutex mutex;
-    void addPeer(int64_t pid);
-    void removePeer(int64_t pid);
+    Room(int64_t id);
+    Room(const Room& other);
+    Room(Room&& other);
+    Room& operator=(const Room&);
+    ~Room();
+
+    bool addPeer(int64_t pid, std::shared_ptr<Peer>);
+    bool removePeer(int64_t from_pid);
+    bool sendToRoom(int64_t from_pid, const std::string& msg);
+    bool isInroom(int64_t from_pid);
     bool empty();
-    room(int64_t id);
-    room(const room & other);
-    room& operator=(const room &);
-    room(){};
-    ~room();
 
 private:
-    std::unordered_set<int64_t> pids_;
-    mutex pids_mutex_;
+    std::unordered_map<int64_t, std::shared_ptr<Peer>> peers_;
+    std::mutex mu_;
     int64_t id_;
-    log4cxx::LoggerPtr logger;
+    Session session_;
+    static log4cxx::LoggerPtr logger_;
 };
 
-#endif // _ROOM_H_
+#endif  // _ROOM_H_

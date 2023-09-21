@@ -1,53 +1,78 @@
 #include "room.h"
 
+#include "session.h"
 
-using websocketpp::lib::bind;
-using websocketpp::lib::placeholders::_1;
-using websocketpp::lib::placeholders::_2;
+log4cxx::LoggerPtr Room::logger_ = log4cxx::Logger::getRootLogger();
 
-using websocketpp::lib::condition_variable;
-using websocketpp::lib::lock_guard;
-using websocketpp::lib::thread;
-using websocketpp::lib::unique_lock;
+Room::Room(int64_t id) : id_(id), peers_(), mu_(), session_(&peers_, &mu_, id) {}
 
-room::room(int64_t id) : id_(id) {
-    logger=log4cxx::Logger::getRootLogger();
+Room::Room(const Room& other)
+    : id_(other.id_), peers_(other.peers_), mu_(), session_(&peers_, &mu_, other.id_) {}
+
+Room::Room(Room&& other)
+    : id_(other.id_), peers_(), mu_(), session_(&peers_, &mu_, other.id_) {
+    this->id_ = other.id_;
+    this->peers_.swap(other.peers_);
 }
 
-room::room(const room & other) {
-    logger=log4cxx::Logger::getRootLogger();
+Room& Room::operator=(const Room& other) {
     this->id_ = other.id_;
-    this->pids_ = other.pids_;
-}
-
-room& room::operator=(const room &other) {
-    this->id_ = other.id_;
-    this->pids_ = other.pids_;
+    this->peers_ = other.peers_;
+    this->session_ = Session(&peers_, &mu_, id_);
     return *this;
 }
 
-room::~room() {}
+Room::~Room() {}
 
-void room::addPeer(int64_t pid) {
-    lock_guard<mutex> lock(pids_mutex_);
-    if (pids_.find(pid) != pids_.end()) {
-        LOG4CXX_WARN(logger, pid<<" already in room");
-        return;
+bool Room::addPeer(int64_t pid, std::shared_ptr<Peer> peer) {
+    std::lock_guard<std::mutex> lock(mu_);
+    if (peers_.find(pid) != peers_.end()) {
+        LOG4CXX_WARN(logger_, pid << " already in Room");
+    } else {
+        peers_.emplace(pid, peer);
     }
-    pids_.insert(pid);
+    return true;
 }
 
-bool room::empty() {
-    lock_guard<mutex> lock(pids_mutex_);
-    return pids_.empty();
+bool Room::removePeer(int64_t pid) {
+    std::lock_guard<std::mutex> lock(mu_);
+    if (peers_.find(pid) == peers_.end()) {
+        LOG4CXX_WARN(logger_, pid << " not in Room");
+    } else {
+        peers_.erase(pid);
+    }
+    return true;
 }
 
-void room::removePeer(int64_t pid)
-{
-    lock_guard<mutex> lock(pids_mutex_);
-    if (pids_.find(pid) == pids_.end()) {
-        LOG4CXX_WARN(logger, pid<<" not in room");
-        return;
+bool Room::sendToRoom(int64_t from_pid, const std::string& msg) {
+    std::lock_guard<std::mutex> lock(mu_);
+    if (peers_.find(from_pid) == peers_.end()) {
+        LOG4CXX_WARN(logger_, "pid: " << from_pid << " not in room " << id_
+                                      << ", can not send msg to room.");
+        return false;
     }
-    pids_.erase(pid);
+    int len = peers_.size();
+    for (auto p = peers_.begin(); p != peers_.end();) {
+        try {
+            p->second->sendMsg(msg);
+        } catch (std::exception const& e) {
+            LOG4CXX_ERROR(logger_, e.what());
+            LOG4CXX_ERROR(logger_, "failed to send msg to pid "
+                                       << p->first << "in room " << id_);
+            p = peers_.erase(p);
+            continue;
+        }
+        ++p;
+    }
+    return true;
+};
+
+bool Room::isInroom(int64_t from_pid) {
+    std::lock_guard<std::mutex> lock(mu_);
+    return peers_.find(from_pid) != peers_.end();
+}
+
+bool Room::empty() {
+    std::lock_guard<std::mutex> lock(mu_);
+    return peers_.empty();
 }

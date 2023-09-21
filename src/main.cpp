@@ -20,11 +20,7 @@ int main()
         log4cxx::LoggerPtr logger = log4cxx::Logger::getRootLogger();
         sigServer server;
 
-        std::thread t1(std::bind(&sigServer::processTasks, &server));
-        std::thread t2(std::bind(&sigServer::processTasks, &server));
         server.run(9000);
-        t1.join();
-        t2.join();
     }
     catch (std::exception const &e)
     {

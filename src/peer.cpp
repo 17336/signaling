@@ -1,31 +1,56 @@
 #include "peer.h"
 
-peer::peer() {
-    logger=log4cxx::Logger::getRootLogger();
+log4cxx::LoggerPtr Peer::logger_ = log4cxx::Logger::getRootLogger();
+
+Peer::Peer(const int64_t &id, const Type::connection_ptr &con,
+           const std::string &name)
+    : id_(id), con_(con), name_(name) {
+    // maybe throw exception, should catch
+    ip_ = con_->get_remote_endpoint();
 }
 
-peer::peer(server *s, const int64_t &id,
-           const connection_hdl &con, const std::string &name) :s_(s), id_(id), con_(con), name_(name) {
-    logger=log4cxx::Logger::getRootLogger();
+Peer::Peer(const Peer &other) {
+    id_ = other.id_;
+    con_ = other.con_;
+    ip_ = other.ip_;
+    name_ = other.name_;
 }
 
-peer::~peer() {
+Peer &Peer::operator=(const Peer &other) {
+    id_ = other.id_;
+    ip_ = other.ip_;
+    con_ = other.con_;
+    name_ = other.name_;
+    return *this;
 }
 
-peer::connection_hdl& peer::getCon() {
-    return con_;
+// 夺取右值，避免拷贝
+Peer::Peer(Peer &&other) : con_(other.con_), id_(other.id_) {
+    ip_.swap(other.ip_);
+    name_.swap(other.name_);
+    other.con_.reset();
 }
 
-bool peer::sendMsg(message_ptr msg) {
-    error_code res_code;
-    s_->send(con_, msg, res_code);
+Peer::~Peer() {}
+
+Type::connection_ptr Peer::getCon() { return con_; }
+
+bool Peer::sendMsg(Type::message_ptr msg) {
+    Type::error_code res_code = con_->send(msg);
     if (res_code) {
-        LOG4CXX_WARN(logger, "failed to send msg to "<<id_<<", code: "<< res_code.value());
+        LOG4CXX_WARN(logger_, "failed to send msg to "
+                                  << id_ << ", code: " << res_code.value());
         return false;
     }
     return true;
 }
 
-void peer::sendMsg(const std::string& msg){
-    s_->send(con_, msg, opcode::TEXT);
+bool Peer::sendMsg(const std::string &msg) {
+    Type::error_code res_code = con_->send(msg, Type::opcode::TEXT);
+    if (res_code) {
+        LOG4CXX_WARN(logger_, "failed to send msg to "
+                                  << id_ << ", code: " << res_code.value());
+        return false;
+    }
+    return true;
 }
