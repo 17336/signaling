@@ -1,6 +1,7 @@
 #ifndef _PEERSTATUS_H_
 #define _PEERSTATUS_H_
 
+#include <cstdint>
 // peer status about room/session
 class PeerStatus {
 public:
@@ -9,6 +10,10 @@ public:
     PeerStatus& operator=(const PeerStatus&);
 
     void reset();
+
+    int64_t getRoomID();
+
+    void setRoomID(int64_t);
 
     bool isInSession() const;
 
@@ -63,7 +68,9 @@ public:
     void setConnected(bool connected);
 
 private:
+    int64_t room_id_;
     bool isInSession_;
+    // if true, status to sql
     bool wasInSession_;
     bool cameraUsing_;
     bool cameraUsed_;

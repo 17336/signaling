@@ -3,10 +3,11 @@
 #include "rapidjson/stringbuffer.h"
 #include "rapidjson/writer.h"
 #include "util.h"
+#include "operate.h"
 
-log4cxx::LoggerPtr WorkerPool::logger_ = log4cxx::Logger::getRootLogger();
+log4cxx::LoggerPtr WorkerPool::logger_ = log4cxx::Logger::getLogger("server");
 
-WorkerPool::WorkerPool() {
+WorkerPool::WorkerPool():count_(8) {
     room_manager_ = RoomManager::getInstance();
     peer_manager_ = PeerManager::getInstance();
 }
@@ -20,6 +21,7 @@ void WorkerPool::start() {
     for (int i = 0; i < count_; i++) {
         threads_.push_back(std::thread(&WorkerPool::run, this));
     }
+    LOG4CXX_INFO(logger_, "start " << count_ << " worker");
 }
 
 void WorkerPool::stop() {
@@ -27,6 +29,7 @@ void WorkerPool::stop() {
     for (int i = 0; i < count_; i++) {
         threads_[i].join();
     }
+    LOG4CXX_INFO(logger_, "stop " << count_ << " worker");
 }
 
 void WorkerPool::addContext(const Context &context) { input_.push(context); }
@@ -34,7 +37,7 @@ void WorkerPool::addContext(const Context &context) { input_.push(context); }
 void WorkerPool::run() {
     Context context;
     while (start_) {
-        if (!input_.get(&context, 5000)) {
+        if (!input_.get(&context, 30000)) {
             LOG4CXX_WARN(logger_, "No context in input");
             continue;
         }
@@ -86,8 +89,7 @@ inline bool WorkerPool::getRid(Type::connection_ptr con,
 inline bool WorkerPool::getName(Type::connection_ptr con,
                                 rapidjson::Document &doc, std::string *name,
                                 bool sendError) {
-    if (doc.HasMember("name") && doc["name"].IsString()) {
-        *name = doc["name"].GetString();
+    if (doc.HasMember("name") && doc["name"].IsString() && !(*name = doc["name"].GetString()).empty()) {
         return true;
     } else if (sendError) {
         response(con, "please provide your name!");
@@ -136,7 +138,7 @@ void WorkerPool::process(Context &context) {
 
     switch (opt) {
         // peer
-        case operate::LOG_IN: {
+        case OPERATE::LOG_IN: {
             if (!getName(con, doc, &name))
                 return;
             if (getFromPid(con, doc, &from_pid, false)) {
@@ -145,12 +147,12 @@ void WorkerPool::process(Context &context) {
                 peer_manager_->logIn(con, name);
             break;
         }
-        case operate::LOG_OUT:
+        case OPERATE::LOG_OUT:
             if (getFromPid(con, doc, &from_pid)) {
                 peer_manager_->logOut(con, from_pid);
             }
             break;
-        case operate::SEARCH_PEER:
+        case OPERATE::SEARCH_PEER:
             if (!getFromPid(con, doc, &from_pid)) {
                 return;
             }
@@ -162,90 +164,95 @@ void WorkerPool::process(Context &context) {
                 response(con, "support dest_pid or name");
             }
             break;
-        case operate::SEND_TO:
+        case OPERATE::SEND_TO:
             if (getFromPid(con, doc, &from_pid) &&
                 getDestPid(con, doc, &dest_pid) && getMsg(con, doc, &msg))
                 peer_manager_->sendTo(con, from_pid, dest_pid, msg);
             break;
 
         // room
-        case operate::SEARCH_ROOM:
+        case OPERATE::SEARCH_ROOM:
             if (getFromPid(con, doc, &from_pid) && getRid(con, doc, &rid))
                 room_manager_->searchRoom(con, rid, from_pid);
             break;
-        case operate::CREATE_ROOM:
+        case OPERATE::CREATE_ROOM:
             if (getFromPid(con, doc, &from_pid))
                 room_manager_->createRoom(con, from_pid);
             break;
-        case operate::JOIN_ROOM:
+        case OPERATE::JOIN_ROOM:
             if (getFromPid(con, doc, &from_pid) && getRid(con, doc, &rid))
                 room_manager_->joinRoom(con, rid, from_pid);
             break;
-        case operate::LEFT_ROOM:
+        case OPERATE::LEFT_ROOM:
             if (getFromPid(con, doc, &from_pid) && getRid(con, doc, &rid))
                 room_manager_->leftRoom(con, rid, from_pid);
             break;
-        case operate::SEND_TO_ROOM:
+        case OPERATE::SEND_TO_ROOM:
             if (getFromPid(con, doc, &from_pid) && getRid(con, doc, &rid) &&
                 getMsg(con, doc, &msg))
                 room_manager_->sendToRoom(con, rid, from_pid, msg);
             break;
-        case operate::GET_PEERS_IN_ROOM:
+        case OPERATE::GET_PEERS_IN_ROOM:
             if (getFromPid(con, doc, &from_pid) && getRid(con, doc, &rid))
                 room_manager_->getPeersInRoom(con, rid, from_pid);
             break;
+        case OPERATE::GET_ALL_PEERS: {
+            if (getFromPid(con, doc, &from_pid))
+                room_manager_->getAllPeers(con, from_pid);
+            break;
+        }
 
         // session
-        case operate::CALL:
+        case OPERATE::CALL:
             if (getFromPid(con, doc, &from_pid) && getRid(con, doc, &rid) &&
                 getDestPid(con, doc, &dest_pid))
                 room_manager_->call(con, rid, from_pid, dest_pid);
             break;
-        case operate::CALL_ACCEPT:
+        case OPERATE::CALL_ACCEPT:
             if (getFromPid(con, doc, &from_pid) && getRid(con, doc, &rid) &&
                 getDestPid(con, doc, &dest_pid))
                 room_manager_->callAccept(con, rid, from_pid, dest_pid);
             break;
-        case operate::CALL_REJECT:
+        case OPERATE::CALL_REJECT:
             if (getFromPid(con, doc, &from_pid) && getRid(con, doc, &rid) &&
                 getDestPid(con, doc, &dest_pid))
                 room_manager_->callReject(con, rid, from_pid, dest_pid);
             break;
-        case operate::INVITE:
+        case OPERATE::INVITE:
             if (getFromPid(con, doc, &from_pid) && getRid(con, doc, &rid) &&
                 getDestPid(con, doc, &dest_pid))
                 room_manager_->invite(con, rid, from_pid, dest_pid);
             break;
-        case operate::INVITE_ACCEPT:
+        case OPERATE::INVITE_ACCEPT:
             if (getFromPid(con, doc, &from_pid) && getRid(con, doc, &rid) &&
                 getDestPid(con, doc, &dest_pid))
                 room_manager_->inviteAccept(con, rid, from_pid, dest_pid);
             break;
-        case operate::INVITE_REJECT:
+        case OPERATE::INVITE_REJECT:
             if (getFromPid(con, doc, &from_pid) && getRid(con, doc, &rid) &&
                 getDestPid(con, doc, &dest_pid))
                 room_manager_->inviteReject(con, rid, from_pid, dest_pid);
             break;
-        case operate::JOIN_SESSION:
+        case OPERATE::JOIN_SESSION:
             if (getFromPid(con, doc, &from_pid) && getRid(con, doc, &rid))
                 room_manager_->joinSession(con, rid, from_pid);
             break;
-        case operate::LEFT_SESSION:
+        case OPERATE::LEFT_SESSION:
             if (getFromPid(con, doc, &from_pid) && getRid(con, doc, &rid))
-                room_manager_->leftRoom(con, rid, from_pid);
+                room_manager_->leftSession(con, rid, from_pid);
             break;
-        case operate::GET_SESSION_STATUS:
+        case OPERATE::GET_SESSION_STATUS:
             if (getFromPid(con, doc, &from_pid) && getRid(con, doc, &rid))
                 room_manager_->getSessionStatus(con, rid);
             break;
-        case operate::SEND_TO_SESSION:
+        case OPERATE::SEND_TO_SESSION:
             if (getFromPid(con, doc, &from_pid) && getRid(con, doc, &rid) &&
                 getMsg(con, doc, &msg))
                 room_manager_->sendToSession(con, rid, from_pid, msg);
             break;
 
         // 会话协商
-        case operate::SEND_SDP_OFFER: {
+        case OPERATE::SEND_SDP_OFFER: {
             std::string offer;
             if (doc.HasMember("offer") && doc["offer"].IsString()) {
                 offer = doc["offer"].GetString();
@@ -259,7 +266,7 @@ void WorkerPool::process(Context &context) {
                                             offer);
             break;
         }
-        case operate::SEND_SDP_ANSWER: {
+        case OPERATE::SEND_SDP_ANSWER: {
             std::string answer;
             if (doc.HasMember("answer") && doc["answer"].IsString()) {
                 answer = doc["answer"].GetString();
@@ -274,7 +281,7 @@ void WorkerPool::process(Context &context) {
             break;
         }
 
-        case operate::SEND_ICE_CANDIDATE: {
+        case OPERATE::SEND_ICE_CANDIDATE: {
             std::string candidate;
             if (doc.HasMember("candidate") && doc["candidate"].IsString()) {
                 candidate = doc["candidate"].GetString();
@@ -288,39 +295,39 @@ void WorkerPool::process(Context &context) {
                                                 candidate);
             break;
         }
-        case operate::CONNECTED: {
+        case OPERATE::CONNECTED: {
             if (getFromPid(con, doc, &from_pid) && getRid(con, doc, &rid))
                 room_manager_->connected(con, rid, from_pid);
             break;
         }
 
         // 信令控制
-        case operate::OPEN_CAMERA: {
+        case OPERATE::OPEN_CAMERA: {
             if (getFromPid(con, doc, &from_pid) && getRid(con, doc, &rid))
                 room_manager_->openCamera(con, rid, from_pid);
             break;
         }
-        case operate::CLOSE_CAMERA: {
+        case OPERATE::CLOSE_CAMERA: {
             if (getFromPid(con, doc, &from_pid) && getRid(con, doc, &rid))
                 room_manager_->closeCamera(con, rid, from_pid);
             break;
         }
-        case operate::OPEN_AUDIO: {
+        case OPERATE::OPEN_AUDIO: {
             if (getFromPid(con, doc, &from_pid) && getRid(con, doc, &rid))
                 room_manager_->openAudio(con, rid, from_pid);
             break;
         }
-        case operate::CLOSE_AUDIO: {
+        case OPERATE::CLOSE_AUDIO: {
             if (getFromPid(con, doc, &from_pid) && getRid(con, doc, &rid))
                 room_manager_->closeAudio(con, rid, from_pid);
             break;
         }
-        case operate::OPEN_SCREEN: {
+        case OPERATE::OPEN_SCREEN: {
             if (getFromPid(con, doc, &from_pid) && getRid(con, doc, &rid))
                 room_manager_->openScreen(con, rid, from_pid);
             break;
         }
-        case operate::CLOSE_SCREEN: {
+        case OPERATE::CLOSE_SCREEN: {
             if (getFromPid(con, doc, &from_pid) && getRid(con, doc, &rid))
                 room_manager_->closeScreen(con, rid, from_pid);
             break;

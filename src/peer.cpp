@@ -1,6 +1,6 @@
 #include "peer.h"
 
-log4cxx::LoggerPtr Peer::logger_ = log4cxx::Logger::getRootLogger();
+log4cxx::LoggerPtr Peer::logger_ = log4cxx::Logger::getLogger("processor");
 
 Peer::Peer(const int64_t &id, const Type::connection_ptr &con,
            const std::string &name)

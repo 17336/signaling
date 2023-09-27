@@ -1,9 +1,8 @@
 #include "session.h"
 
-#include "rapidjson/document.h"
 #include "util.h"
 
-log4cxx::LoggerPtr Session::logger_ = log4cxx::Logger::getRootLogger();
+log4cxx::LoggerPtr Session::logger_ = log4cxx::Logger::getLogger("processor");
 
 Session::Session(std::unordered_map<int64_t, std::shared_ptr<Peer>> *peers,
                  std::mutex *mu, int64_t room_id)
@@ -75,7 +74,8 @@ bool Session::inviteAccept(int64_t from_pid, int64_t dest_pid) {
         return false;
     }
     from->peer_status_.setIsInSession(true);
-    return this->sendSignal(from, dest, "inviteAccept");
+    return this->sendSignal(from, dest, "inviteAccept") &&
+           this->sendSignal(from, "joinSession");
 }
 
 bool Session::inviteReject(int64_t from_pid, int64_t dest_pid) {
@@ -92,11 +92,11 @@ bool Session::inviteReject(int64_t from_pid, int64_t dest_pid) {
 bool Session::joinSession(int64_t from_pid) {
     std::shared_ptr<Peer> from;
     if (!(from = getPeer(from_pid))) {
-        LOG4CXX_WARN(logger_, "failed to get peer id: " << from_pid);
+        LOG4CXX_WARN(logger_, "not in room peer id: " << from_pid);
         return false;
     }
     from->peer_status_.setIsInSession(true);
-    return true;
+    return this->sendSignal(from, "joinSession");
 }
 
 bool Session::leftSession(int64_t from_pid) {
@@ -117,11 +117,10 @@ bool Session::leftSession(int64_t from_pid) {
     return true;
 }
 
-std::string Session::getSessionStatus() {
+void Session::getSessionStatus(rapidjson::Document &d) {
     std::lock_guard<std::mutex> lock(*mu_);
-    rapidjson::Document d;  // Null
     d.SetObject();
-    d.AddMember("room_id", id_, d.GetAllocator());
+    d.AddMember("rid", id_, d.GetAllocator());
     rapidjson::Value statuses(rapidjson::kArrayType);
     for (auto &p : *peers_) {
         if (p.second->peer_status_.isInSession()) {
@@ -167,7 +166,6 @@ std::string Session::getSessionStatus() {
         }
     }
     d.AddMember("statuses", statuses, d.GetAllocator());
-    return getString(d);
 }
 
 bool Session::sendToSession(int64_t from_pid, const std::string &msg) {
@@ -181,7 +179,15 @@ bool Session::sendToSession(int64_t from_pid, const std::string &msg) {
     int len = peers_->size();
     for (auto p = peers_->begin(); p != peers_->end();) {
         try {
-            p->second->sendMsg(msg);
+            rapidjson::Document d;
+            d.SetObject();
+            d.AddMember("type", "text", d.GetAllocator());
+            d.AddMember("from", "session", d.GetAllocator());
+            d.AddMember("from_pid", from_pid, d.GetAllocator());
+            d.AddMember("msg", "text", d.GetAllocator());
+            d.AddMember("text", rapidjson::Value(msg.c_str(), d.GetAllocator()),
+                        d.GetAllocator());
+            p->second->sendMsg(getString(d));
         } catch (std::exception const &e) {
             LOG4CXX_ERROR(logger_, e.what());
             LOG4CXX_ERROR(logger_, "failed to send msg to pid "
@@ -211,7 +217,7 @@ bool Session::openCamera(int64_t from_pid) {
         return false;
     }
     from->peer_status_.setCameraUsing(true);
-    return true;
+    return this->sendSignal(from, "openCamera");
 }
 
 bool Session::closeCamera(int64_t from_pid) {
@@ -221,7 +227,7 @@ bool Session::closeCamera(int64_t from_pid) {
         return false;
     }
     from->peer_status_.setCameraUsing(false);
-    return true;
+    return this->sendSignal(from, "closeCamera");
 }
 
 bool Session::openScreen(int64_t from_pid) {
@@ -231,7 +237,7 @@ bool Session::openScreen(int64_t from_pid) {
         return false;
     }
     from->peer_status_.setScreenUsing(true);
-    return true;
+    return this->sendSignal(from, "openScreen");
 }
 
 bool Session::closeScreen(int64_t from_pid) {
@@ -241,7 +247,7 @@ bool Session::closeScreen(int64_t from_pid) {
         return false;
     }
     from->peer_status_.setScreenUsing(false);
-    return true;
+    return this->sendSignal(from, "closeScreen");
 }
 
 bool Session::openAudio(int64_t from_pid) {
@@ -251,7 +257,7 @@ bool Session::openAudio(int64_t from_pid) {
         return false;
     }
     from->peer_status_.setAudioUsing(true);
-    return true;
+    return this->sendSignal(from, "openAudio");
 }
 
 bool Session::closeAudio(int64_t from_pid) {
@@ -261,7 +267,7 @@ bool Session::closeAudio(int64_t from_pid) {
         return false;
     }
     from->peer_status_.setAudioUsing(false);
-    return true;
+    return this->sendSignal(from, "closeAudio");
 }
 
 // 会话协商
@@ -334,6 +340,7 @@ bool Session::sendSignal(std::shared_ptr<Peer> &from,
     d.SetObject();
     d.AddMember("type", rapidjson::Value(type.c_str(), d.GetAllocator()),
                 d.GetAllocator());
+    d.AddMember("msg", "signaling", d.GetAllocator());
     d.AddMember("from_pid", from->id(), d.GetAllocator());
     for (int i = 1; i < kvs.size(); i += 2) {
         d.AddMember(rapidjson::Value(kvs[i - 1].c_str(), d.GetAllocator()),
@@ -357,18 +364,28 @@ bool Session::sendSignal(std::shared_ptr<Peer> &peer, const std::string &type,
     d.SetObject();
     d.AddMember("type", rapidjson::Value(type.c_str(), d.GetAllocator()),
                 d.GetAllocator());
+    d.AddMember("msg", "signaling", d.GetAllocator());
+    d.AddMember("from_pid", peer->id(), d.GetAllocator());
     for (int i = 1; i < kvs.size(); i += 2) {
         d.AddMember(rapidjson::Value(kvs[i - 1].c_str(), d.GetAllocator()),
                     rapidjson::Value(kvs[i].c_str(), d.GetAllocator()),
                     d.GetAllocator());
     }
-    try {
-        peer->sendMsg(getString(d));
-    } catch (std::exception const &e) {
-        LOG4CXX_ERROR(logger_,
-                      "erase pid: " << peer->id() << ", because " << e.what());
-        std::lock_guard<std::mutex> lock(*mu_);
-        peers_->erase(peer->id());
+    std::lock_guard<std::mutex> lock(*mu_);
+    for (auto p = peers_->begin(); p != peers_->end();) {
+        if (p->second->peer_status_.isInSession() && p->first != peer->id()) {
+            try {
+                p->second->sendMsg(getString(d));
+            } catch (std::exception const &e) {
+                LOG4CXX_ERROR(logger_, "erase pid: " << p->second->id()
+                                                     << ", because "
+                                                     << e.what());
+                p = peers_->erase(p);
+                continue;
+            }
+        }
+        ++p;
     }
+
     return true;
 }

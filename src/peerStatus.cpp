@@ -1,7 +1,8 @@
 #include "peerStatus.h"
 
 PeerStatus::PeerStatus()
-    : wasInSession_(false),
+    : room_id_(-1),
+      wasInSession_(false),
       isInSession_(false),
       cameraUsing_(false),
       cameraUsed_(false),
@@ -16,6 +17,14 @@ PeerStatus::PeerStatus()
       sendCandidate_(false),
       receiveCandidate_(false),
       connected_(false) {}
+
+int64_t PeerStatus::getRoomID() {
+    return room_id_;
+}
+
+void PeerStatus::setRoomID(int64_t room_id) {
+    room_id_ = room_id;
+}
 
 bool PeerStatus::isInSession() const { return isInSession_; }
 
@@ -94,6 +103,7 @@ bool PeerStatus::isConnected() const { return connected_; }
 void PeerStatus::setConnected(bool connected) { connected_ = connected; }
 
 void PeerStatus::reset() {
+    room_id_ = -1;
     wasInSession_ = false;
     isInSession_ = false;
     cameraUsing_ = false;
@@ -112,6 +122,7 @@ void PeerStatus::reset() {
 }
 
 PeerStatus::PeerStatus(const PeerStatus &other) {
+    room_id_ = other.room_id_;
     wasInSession_ = other.wasInSession_;
     isInSession_ = other.isInSession_;
     cameraUsing_ = other.cameraUsing_;
@@ -130,6 +141,7 @@ PeerStatus::PeerStatus(const PeerStatus &other) {
 }
 
 PeerStatus &PeerStatus::operator=(const PeerStatus &other) {
+    room_id_ = other.room_id_;
     wasInSession_ = other.wasInSession_;
     isInSession_ = other.isInSession_;
     cameraUsing_ = other.cameraUsing_;

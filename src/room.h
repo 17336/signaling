@@ -1,9 +1,9 @@
 #ifndef _ROOM_H_
 #define _ROOM_H_
 
-#include <cstdint>
 #include <log4cxx/basicconfigurator.h>
 
+#include <cstdint>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -13,8 +13,10 @@
 #include <websocketpp/server.hpp>
 
 #include "peer.h"
-#include "type.h"
+#include "rapidjson/document.h"
+#include "rapidjson/rapidjson.h"
 #include "session.h"
+#include "type.h"
 
 class RoomManager;
 
@@ -33,6 +35,10 @@ public:
     bool sendToRoom(int64_t from_pid, const std::string& msg);
     bool isInroom(int64_t from_pid);
     bool empty();
+
+    void getPeers(rapidjson::Document& d,
+                  rapidjson::Document::AllocatorType& allocator);
+    int64_t getID() const { return id_; };
 
 private:
     std::unordered_map<int64_t, std::shared_ptr<Peer>> peers_;

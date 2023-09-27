@@ -21,6 +21,7 @@ public:
     // 给room发消息除了from_pid
     void sendToRoom(Type::connection_ptr con, int64_t rid, int64_t from_pid,
                     const std::string& msg);
+    void getAllPeers(Type::connection_ptr con, int64_t from_pid);
     void getPeersInRoom(Type::connection_ptr con, int64_t rid,
                         int64_t from_pid);
 
@@ -74,7 +75,7 @@ private:
     RoomManager();
 
     std::shared_ptr<Room> getRoom(int64_t rid);
-    
+
     std::unordered_map<int64_t, std::shared_ptr<Room>> rooms_;
     std::mutex mu_;
     int64_t next_id_;

@@ -8,14 +8,12 @@ void response(Type::connection_ptr con, const std::string &msg) {
 void response(Type::connection_ptr con, const std::string &msg,
                      const std::vector<std::string> &kv) {
     std::stringstream res;
-    res << "{\"msg\":\"" << msg << "\",\"body\":{";
+    res << "{\"msg\":\"" << msg<<"\"";
     int len = kv.size();
     for (int i = 1; i < len; i += 2) {
-        bool isNumber = kv[i - 1].find("id") > 0;
-        res << "\"" << kv[i - 1] << "\":" << (isNumber ? "\"" : "") << kv[i]
-            << (isNumber ? "\"" : "");
-        if (i + 2 < len)
-            res << ",";
+        bool isNumber = (kv[i - 1].find("id") != std::string::npos);
+        res << ",\"" << kv[i - 1] << "\":" << (isNumber ? "" : "\"") << kv[i]
+            << (isNumber ? "" : "\"");
     }
     res << "}";
     con->send(res.str());

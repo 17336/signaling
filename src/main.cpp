@@ -14,12 +14,8 @@ int main()
 {
     try
     {
-        // Create a server endpoint
-        //%-4r [%t] %%-5p %c %x - %m%n
-        log4cxx::BasicConfigurator::configure();
-        log4cxx::LoggerPtr logger = log4cxx::Logger::getRootLogger();
+        log4cxx::PropertyConfigurator::configure("../conf/log.conf");
         sigServer server;
-
         server.run(9000);
     }
     catch (std::exception const &e)

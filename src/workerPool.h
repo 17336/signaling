@@ -45,40 +45,6 @@ private:
     std::vector<std::thread> threads_;
     static log4cxx::LoggerPtr logger_;
     ProducerConsumerQueue<Context> input_;
-
-    enum operate {
-        LOG_IN = 0,
-        LOG_OUT,
-        SEARCH_PEER,
-        SEND_TO,
-        SEARCH_ROOM,
-        CREATE_ROOM,
-        JOIN_ROOM,
-        LEFT_ROOM,
-        SEND_TO_ROOM,
-        GET_PEERS_IN_ROOM,
-        CALL,
-        CALL_ACCEPT,
-        CALL_REJECT,
-        INVITE,
-        INVITE_ACCEPT,
-        INVITE_REJECT,
-        JOIN_SESSION,
-        LEFT_SESSION,
-        GET_SESSION_STATUS,
-        SEND_TO_SESSION,
-        SEND_SDP_OFFER,
-        SEND_SDP_ANSWER,
-        SEND_ICE_CANDIDATE,
-        CONNECTED,
-        OPEN_CAMERA,
-        CLOSE_CAMERA,
-        OPEN_SCREEN,
-        CLOSE_SCREEN,
-        OPEN_AUDIO,
-        CLOSE_AUDIO,
-        Unkown,
-    };
 };
 
 #endif  // _WORKERPOOL_H_

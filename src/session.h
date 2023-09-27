@@ -8,6 +8,7 @@
 #include "log4cxx/log4cxx.h"
 #include "log4cxx/logger.h"
 #include "peer.h"
+#include "rapidjson/document.h"
 #include "sessionInterface.h"
 
 class Session : public SessionNegotiate, public SessionControl {
@@ -29,7 +30,7 @@ public:
     bool joinSession(int64_t from_pid);
     bool leftSession(int64_t from_pid);
 
-    std::string getSessionStatus();
+    void getSessionStatus(rapidjson::Document &d);
 
     bool sendToSession(int64_t from_pid, const std::string &msg);
 

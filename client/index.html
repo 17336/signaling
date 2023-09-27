@@ -7,53 +7,117 @@
 
 <body>
     <div>
-        <input type="submit" value="Start" onclick="start()" />
+        <input type="submit" value="log in" onclick="login()" />
         <input type="submit" value="CREATEROOM" onclick="createroom()" />
-        <input type="submit" value="getpeers" onclick="getpeers()" />
+        <input type="submit" value="getAllPeers" onclick="getAllPeers()" />
         <input type="submit" value="JOINROOM" onclick="joinroom()" />
-        <input type="submit" value="sendmsg" onclick="sendmsg()" />
+        <input type="submit" value="send msg to room" onclick="sendMSGToRoom()" />
+        <input type="submit" value="send msg to user" onclick="sendTo()" />
+        <input type="submit" value="send msg to session" onclick="sendMSGToSession()" />
+
+        <input type="submit" value="call" onclick="call()" />
+        <input type="submit" value="invite" onclick="invite()" />
+        <input type="submit" value="join session" onclick="joinsession()" />
+
+        <input type="submit" value="打开屏幕共享" onclick="openScreen()" />
+        <input type="submit" value="打开摄像头" onclick="openCamera()" />
+        <input type="submit" value="关闭视频" onclick="closeVideo()" />
         <input type="text" id="Textarea" />
+        <input type="text" id="Textarea1" />
     </div>
-    <div id="stats-box"></div>
     <div id="videos">
         <video id="localVideo" autoplay muted playsinline></video>
         <video id="remoteVideo" autoplay playsinline></video>
     </div>
     <div id="messages"></div>
-    <script src="https://webrtc.github.io/adapter/adapter-latest.js"></script>
+    <div id="stats-box"></div>
+    <script src="adapter-latest.js"></script>
     <script type="text/javascript">
         var webSocket =
             new WebSocket('ws://localhost:9000');
+        var configuration = {
+            'iceServers': [
+                // {
+                //     'urls': 'stun:10.237.112.157:3478'
+                // },
+                // {
+                //     urls: ['turn:10.237.112.157:3478'],
+                //     username: "test",
+                //     credential: "123456",
+                // },
+            ],
+        };
 
         const OPERATE = {
             LOG_IN: 0,
             LOG_OUT: 1,
-            CREATE_ROOM: 2,
-            JOIN_ROOM: 3,
-            LEFT_ROOM: 4,
-            SEND_TO: 5,
-            SEND_TO_ROOM: 6,
-            GET_PEERS_IN_ROOM: 7,
-        }
+            SEARCH_PEER: 2,
+            SEND_TO: 3,
+            SEARCH_ROOM: 4,
+            CREATE_ROOM: 5,
+            JOIN_ROOM: 6,
+            LEFT_ROOM: 7,
+            SEND_TO_ROOM: 8,
+            GET_PEERS_IN_ROOM: 9,
+            GET_ALL_PEERS: 10,
+            CALL: 11,
+            CALL_ACCEPT: 12,
+            CALL_REJECT: 13,
+            INVITE: 14,
+            INVITE_ACCEPT: 15,
+            INVITE_REJECT: 16,
+            JOIN_SESSION: 17,
+            LEFT_SESSION: 18,
+            GET_SESSION_STATUS: 19,
+            SEND_TO_SESSION: 20,
+            SEND_SDP_OFFER: 21,
+            SEND_SDP_ANSWER: 22,
+            SEND_ICE_CANDIDATE: 23,
+            CONNECTED: 24,
+            OPEN_CAMERA: 25,
+            CLOSE_CAMERA: 26,
+            OPEN_SCREEN: 27,
+            CLOSE_SCREEN: 28,
+            OPEN_AUDIO: 29,
+            CLOSE_AUDIO: 30
+        };
+
+        var isLog = false;
+        var inRoom = false;
+        var inSession = false;
+
         var pid = 0;
         var rid = 0;
+        var remote_pid = 0;
         var text = document.getElementById('Textarea');
+        var text1 = document.getElementById('Textarea1');
         // 房间内至少有两个人，才为true
         var isChannelReady = false;
         // 房间创建者持有isInitiator=true
         var isInitiator = false;
         var isStarted = false;
-        var localStream;
-        var pc;
+        var camStream;
+        var screenStream = null;
+        const VideoType = {
+            CAMERA: 0,
+            SCREEN: 1,
+            NULL: 2,
+        }
+        const AudioType = {
+            OPEN: 0,
+            NULL: 1,
+        }
+        var currentVideo = VideoType.NULL
+        var currentAudio = AudioType.NULL
+        var videoSender
+        var audioSender
+        var pc = null;
         var remoteStream;
         var turnReady;
         var localVideo = document.querySelector('#localVideo');
         var remoteVideo = document.querySelector('#remoteVideo');
 
-        function sendmsg() {
-            var str = text.value;
-            sendMessage(str);
-        }
+
 
         // 采集音视频
         navigator.mediaDevices.getUserMedia({
@@ -66,7 +130,7 @@
             });
         function gotStream(stream) {
             console.log('Adding local stream.');
-            localStream = stream;
+            camStream = stream;
             localVideo.srcObject = stream;
         }
         // Set up audio and video regardless of what devices are present.
@@ -76,12 +140,10 @@
         };
 
         webSocket.onopen = function (event) {
-            var op = { "operate": OPERATE.LOG_IN };
-            webSocket.send(JSON.stringify(op));
         };
 
         webSocket.onclose = function (event) {
-            var op = { "operate": OPERATE.LOG_OUT, "pid": pid }
+            var op = { "operate": OPERATE.LOG_OUT, "from_pid": pid }
             webSocket.send(JSON.stringify(op));
             var op = { "operate": OPERATE.LEFT_ROOM, "rid": rid }
             webSocket.send(JSON.stringify(op));
@@ -93,6 +155,8 @@
 
         function onMessage(event) {
             console.log("receive msg:", event.data);
+            document.getElementById('messages').innerHTML
+                += '<br />' + event.data;
             try {
                 j = JSON.parse(event.data);
             } catch (err) {
@@ -100,109 +164,193 @@
                     += '<br />' + event.data + "can't parse";
                 return;
             }
-            document.getElementById('messages').innerHTML
-                += '<br />' + event.data;
-            if (j.type == "logIn") {
-                pid = j.pid;
-                window.onbeforeunload = function (e) {
-                    var op = { "operate": OPERATE.LEFT_ROOM, "rid": rid, "pid": pid }
-                    webSocket.send(JSON.stringify(op));
-                    var op = { "operate": OPERATE.LOG_OUT, "pid": pid }
-                    webSocket.send(JSON.stringify(op));
-                    //request(duration);
-                };
+            if (j.msg == "signaling") {
+                if (j.type == "call") {
+                    var r = confirm("收到来自" + j.from_pid + "的会话请求，点击确认同意！");
+                    if (r == true) {
+                        remote_pid = j.from_pid;
+                        var op = { "operate": OPERATE.CALL_ACCEPT, "rid": rid, "from_pid": pid, "dest_pid": remote_pid };
+                        webSocket.send(JSON.stringify(op))
+                    }
+                    else {
+                        var op = { "operate": OPERATE.CALL_REJECT, "rid": rid, "from_pid": pid, "dest_pid": remote_pid };
+                        webSocket.send(JSON.stringify(op));
+                    }
+                    return
+                }
+                else if (j.type == "callAccept" || j.type == "joinSession") {
+                    document.getElementById('messages').innerHTML
+                        += '<br />' + "remote id: " + j.from_pid + " join in session";
+                    remote_pid = j.from_pid;
+                    startCall();
+                }
+                else if (j.type == "callReject") {
+                    document.getElementById('messages').innerHTML
+                        += '<br />' + "remote id: " + j.from_pid + " reject your call";
+                }
+                else if (j.type == "invite") {
+                    var r = confirm("收到来自" + j.from_pid + "的会话邀请，点击确认同意！");
+                    if (r == true) {
+                        remote_pid = j.from_pid;
+                        var op = { "operate": OPERATE.INVITE_ACCEPT, "rid": rid, "from_pid": pid, "dest_pid": remote_pid };
+                        webSocket.send(JSON.stringify(op))
+                    }
+                    else {
+                        var op = { "operate": OPERATE.INVITE_REJECT, "rid": rid, "from_pid": pid, "dest_pid": remote_pid };
+                        webSocket.send(JSON.stringify(op));
+                    }
+                    return
+                }
+                else if (j.type == "inviteReject") {
+                    document.getElementById('messages').innerHTML
+                        += '<br />' + "remote id: " + j.from_pid + " reject your invite";
+                }
+                else if (j.type == "SDPOffer") {
+                    console.log("receive offer");
+                    remote_pid = j.from_pid;
+                    startReply(JSON.parse(j.offer));
+                }
+                else if (j.type == 'SDPAnswer') {
+                    console.log("receive answer");
+                    // console.log("will add remote answer");
+                    pc.setRemoteDescription(new RTCSessionDescription(JSON.parse(j.answer)));
+                    // console.log("finish add remote answer");
+                }
+                else if (j.type == "ICECandidate") {
+                    candidate = JSON.parse(j.candidate)
+                    var candidate = new RTCIceCandidate({
+                        sdpMLineIndex: candidate.label,
+                        candidate: candidate.candidate
+                    });
+                    // console.log("will add remote ice");
+                    pc.addIceCandidate(candidate);
+                    // console.log("finish add remote ice");
+                }
                 return;
             }
-            else if (j.type == "createRoom") {
-                rid = j.rid;
-                return;
-            } else if (j.type == "joined") {
-                if (j.pid == pid) {
-                    console.log("success join room");
+            else if (j.msg == "success") {
+                if (j.type == "logIn") {
+                    pid = j.pid;
+                    isLog = true;
+                    return;
+                }
+                else if (j.type == "createRoom" || j.type == "joinRoom") {
+                    inRoom = true;
                     rid = j.rid;
                     return;
                 }
-                startCall(j);
-            }
-            else if (j.type == "offer") {
-                if (j.pid == pid) {
-                    console.log("success offer");
-                    return;
+                else if (j.type == "callAccept" || j.type == "joinSession" || j.type == "inviteAccept") {
+                    inSession = true;
                 }
-                startReply(j);
             }
-            else if (j.type == "candidate") {
-                var candidate = new RTCIceCandidate({
-                    sdpMLineIndex: j.label,
-                    candidate: j.candidate
-                });
-                console.log("will add remote ice");
-                pc.addIceCandidate(candidate);
-                console.log("finish add remote ice");
-            }
-            else if (j.type == 'answer') {
-                if (j.pid == pid) {
-                    console.log("success answer");
-                    return;
-                }
-                console.log("will add remote answer");
-                pc.setRemoteDescription(new RTCSessionDescription(j));
-                console.log("finish add remote answer");
+            else if (j.msg == "text") {
+                document.getElementById('messages').innerHTML
+                    += '<br />' + "receive msg: " + event.data;
+                return;
             }
         }
 
+
         function startReply(j) {
-            createPeerConnection();
-            pc.addStream(localStream);
-            console.log("will add remote offer");
+            if (pc == null) {
+                createPeerConnection();
+                var camVideoTrack = camStream.getVideoTracks()[0];
+                var camAudioTrack = camStream.getAudioTracks()[0];
+                videoSender = pc.addTrack(camVideoTrack, camStream);
+                audioSender = pc.addTrack(camAudioTrack, camStream);
+                currentVideo = VideoType.CAMERA
+                currentAudio = AudioType.OPEN
+            }
+            // console.log("will add remote offer");
             pc.setRemoteDescription(new RTCSessionDescription(j));
-            console.log("finish add remote offer");
+            // console.log("finish add remote offer");
             doAnswer();
         }
 
         function startCall(j) {
             createPeerConnection();
-            pc.addStream(localStream);
+            var camVideoTrack = camStream.getVideoTracks()[0];
+            var camAudioTrack = camStream.getAudioTracks()[0];
+            videoSender = pc.addTrack(camVideoTrack, camStream);
+            audioSender = pc.addTrack(camAudioTrack, camStream);
+            currentVideo = VideoType.CAMERA
+            currentAudio = AudioType.OPEN
             doCall();
         }
 
         // 房间创建者调用，发送offer
         function doCall() {
             console.log('Sending offer to peer');
-            pc.createOffer(setLocalAndSendMessage, handleCreateOfferError);
+            // pc.createOffer(setLocalAndSendMessage, handleCreateOfferError);
+            offer = pc.createOffer({
+                offerToReceiveAudio: true,
+                offerToReceiveVideo: true
+            }).then(setLocalAndSendOffer, handleCreateOfferError);
         }
-        // 收到offer者回复
-        function doAnswer() {
-            console.log('Sending answer to peer.');
-            pc.createAnswer().then(
-                setLocalAndSendMessage,
-                onCreateSessionDescriptionError
-            );
+
+        // 把自己的offer发给room中其他所有人
+        function setLocalAndSendOffer(sessionDescription) {
+            pc.setLocalDescription(sessionDescription);
+            console.log('setLocalAndSendMessage sending message', sessionDescription);
+            sendSDPOffer(sessionDescription);
         }
-        function onCreateSessionDescriptionError(error) {
-            console.log('Failed to create session description: ' + error.toString());
+
+        function sendSDPOffer(offer) {
+            if (typeof offer != "string") {
+                offer = JSON.stringify(offer);
+            }
+            var op = {
+                "operate": OPERATE.SEND_SDP_OFFER,
+                "from_pid": pid, "dest_pid": remote_pid, "rid": rid, "offer": offer
+            }
+            webSocket.send(JSON.stringify(op));
         }
 
         function handleCreateOfferError(event) {
             console.log('createOffer() error: ', event);
         }
 
-        // 把自己的sdp发给room中其他所有人
-        function setLocalAndSendMessage(sessionDescription) {
+        // 收到offer者回复
+        function doAnswer() {
+            console.log('Sending answer to peer.');
+            pc.createAnswer().then(
+                setLocalAndSendAnswer,
+                handleCreateAnswerError
+            );
+        }
+
+        // 把自己的answer发给room中其他所有人
+        function setLocalAndSendAnswer(sessionDescription) {
             pc.setLocalDescription(sessionDescription);
             console.log('setLocalAndSendMessage sending message', sessionDescription);
-            sendMessage(sessionDescription);
+            sendSDPAnswer(sessionDescription);
         }
+
+        function sendSDPAnswer(answer) {
+            if (typeof answer != "string") {
+                answer = JSON.stringify(answer);
+            }
+            var op = {
+                "operate": OPERATE.SEND_SDP_ANSWER,
+                "from_pid": pid, "dest_pid": remote_pid, "rid": rid, "answer": answer
+            }
+            webSocket.send(JSON.stringify(op));
+        }
+
+        function handleCreateAnswerError(event) {
+            console.log('CreateAnswer() error: ', event);
+        }
+
+
 
         // 创建peerCon
         function createPeerConnection() {
             try {
-                pc = new RTCPeerConnection(null);
+                pc = new RTCPeerConnection(configuration)
                 pc.onicecandidate = handleIceCandidate;
-                pc.onaddstream = handleRemoteStreamAdded;
+                pc.ontrack = handleRemoteTrackAdded;
                 pc.onremovestream = handleRemoteStreamRemoved;
                 console.log('Created RTCPeerConnnection');
-
                 pc.onsignalingstatechange = (event) => {
                     console.log("signalingState change to: ", pc.signalingState, event);
                 };
@@ -211,6 +359,26 @@
                 };
                 pc.onconnectionstatechange = (event) => {
                     console.log("connectionstate change to: ", pc.connectionState, event);
+                    if (pc.connectionState == "connected") {
+                        var op = { "operate": OPERATE.CONNECTED, "from_pid": pid, "rid": rid }
+                        webSocket.send(JSON.stringify(op))
+
+                        var op = { "operate": OPERATE.OPEN_AUDIO, "from_pid": pid, "rid": rid }
+                        webSocket.send(JSON.stringify(op))
+
+                        var op = { "operate": OPERATE.OPEN_CAMERA, "from_pid": pid, "rid": rid }
+                        webSocket.send(JSON.stringify(op))
+                        // var op = { "operate": OPERATE.CONNECTED, "from_pid": from_pid, "rid": rid }
+                        // webSocket.send(JSON.stringify(op))
+                    }
+
+                    pc.onnegotiationneeded = (ev) => {
+                        console.log("negotiate sdp offer/answer.");
+                        offer = pc.createOffer({
+                            offerToReceiveAudio: true,
+                            offerToReceiveVideo: true
+                        }).then(setLocalAndSendOffer, handleCreateOfferError);
+                    };
                 };
                 pc.onicegatheringstatechange = (event) => {
                     console.log("icegatheringstate change to: ", pc.iceGatheringState, event);
@@ -222,12 +390,21 @@
             }
         }
 
-        function sendMessage(msg) {
-            console.log("send msg:", msg)
+        function sendMessageToRoom(msg) {
+            console.log("send msg to room:", msg)
             if (typeof msg != "string") {
                 msg = JSON.stringify(msg);
             }
-            var op = { "operate": OPERATE.SEND_TO_ROOM, "pid": pid, "rid": rid, "body": msg };
+            var op = { "operate": OPERATE.SEND_TO_ROOM, "from_pid": pid, "rid": rid, "msg": msg };
+            webSocket.send(JSON.stringify(op));
+        }
+
+        function sendMessageToSession(msg) {
+            console.log("send msg to session:", msg)
+            if (typeof msg != "string") {
+                msg = JSON.stringify(msg);
+            }
+            var op = { "operate": OPERATE.SEND_TO_SESSION, "from_pid": pid, "rid": rid, "msg": msg };
             webSocket.send(JSON.stringify(op));
         }
 
@@ -235,7 +412,7 @@
         function handleIceCandidate(event) {
             console.log('icecandidate event: ', event);
             if (event.candidate) {
-                sendMessage({
+                sendCandidate({
                     type: 'candidate',
                     label: event.candidate.sdpMLineIndex,
                     id: event.candidate.sdpMid,
@@ -245,38 +422,48 @@
                 console.log('End of candidates.');
             }
         }
-        function handleRemoteStreamAdded(event) {
-            console.log('Remote stream added.');
-            remoteStream = event.stream;
+        function sendCandidate(candidate) {
+            if (typeof candidate != "string") {
+                candidate = JSON.stringify(candidate);
+            }
+            var op = {
+                "operate": OPERATE.SEND_ICE_CANDIDATE,
+                "from_pid": pid, "dest_pid": remote_pid, "rid": rid, "candidate": candidate
+            }
+            webSocket.send(JSON.stringify(op));
+        }
+        function handleRemoteTrackAdded(event) {
+            console.log('Remote track added, add streams, there ' + event.streams.length + " streams");
+            remoteStream = event.streams[0];
             remoteVideo.srcObject = remoteStream;
             console.log("signalingState: ", pc.signalingState, ", iceConnectionState: ", pc.iceConnectionState, ", connectionState: ", pc.connectionState)
             // add report
-            setInterval(() => {
-                pc.getStats(null).then((stats) => {
-                    let statsOutput = "";
+            // setInterval(() => {
+            //     pc.getStats(null).then((stats) => {
+            //         let statsOutput = "";
 
-                    stats.forEach((report) => {
-                        statsOutput +=
-                            `<h2>Report: ${report.type}</h2>\n<strong>ID:</strong> ${report.id}<br>\n` +
-                            `<strong>Timestamp:</strong> ${report.timestamp}<br>\n`;
+            //         stats.forEach((report) => {
+            //             statsOutput +=
+            //                 `<h2>Report: ${report.type}</h2>\n<strong>ID:</strong> ${report.id}<br>\n` +
+            //                 `<strong>Timestamp:</strong> ${report.timestamp}<br>\n`;
 
-                        // Now the statistics for this report; we intentionally drop the ones we
-                        // sorted to the top above
+            //             // Now the statistics for this report; we intentionally drop the ones we
+            //             // sorted to the top above
 
-                        Object.keys(report).forEach((statName) => {
-                            if (
-                                statName !== "id" &&
-                                statName !== "timestamp" &&
-                                statName !== "type"
-                            ) {
-                                statsOutput += `<strong>${statName}:</strong> ${report[statName]}<br>\n`;
-                            }
-                        });
-                    });
+            //             Object.keys(report).forEach((statName) => {
+            //                 if (
+            //                     statName !== "id" &&
+            //                     statName !== "timestamp" &&
+            //                     statName !== "type"
+            //                 ) {
+            //                     statsOutput += `<strong>${statName}:</strong> ${report[statName]}<br>\n`;
+            //                 }
+            //             });
+            //         });
 
-                    document.querySelector("#stats-box").innerHTML = statsOutput;
-                });
-            }, 1000);
+            //         document.querySelector("#stats-box").innerHTML = statsOutput;
+            //     });
+            // }, 1000);
         }
 
         function handleRemoteStreamRemoved(event) {
@@ -291,31 +478,193 @@
         function onClose(event) {
             document.getElementById('messages').innerHTML
                 += '<br />disconnection';
-            var op = { "operate": OPERATE.LOG_OUT, "pid": pid }
+            var op = { "operate": OPERATE.LOG_OUT, "from_pid": pid }
             webSocket.send(JSON.stringify(op));
         }
         function onError(event) {
             alert(event.data);
         }
-        function joinroom() {
-            console.log("pid want join room", pid);
-            var op = { "operate": OPERATE.JOIN_ROOM, "pid": pid, "rid": parseInt(text.value) };
-            console.log("joinroom", op);
+
+        function sendMSGToRoom() {
+            var str = text.value;
+            sendMessageToRoom(str);
+        }
+
+        function sendMSGToSession() {
+            var str = text.value;
+            sendMessageToSession(str);
+        }
+
+        function sendTo() {
+            var msg = text.value;
+            if (typeof msg != "string") {
+                msg = JSON.stringify(msg);
+            }
+            var dest_pid = parseInt(text1.value)
+            if (isNaN(dest_pid)) {
+                alert("请输入整数id")
+                return
+            }
+            var op = { "operate": OPERATE.SEND_TO, "from_pid": pid, "dest_pid": dest_pid, "msg": msg };
             webSocket.send(JSON.stringify(op));
         }
 
-        function start() {
-            var op = { "operate": OPERATE.LOG_IN };
+        function joinroom() {
+            var id = parseInt(text.value);
+            if (isNaN(id)) {
+                alert("请输入整数");
+                return
+            }
+            var op = { "operate": OPERATE.JOIN_ROOM, "from_pid": pid, "rid": id };
+            webSocket.send(JSON.stringify(op));
+        }
+
+        function login() {
+            if (isLog) {
+                alert("already log in");
+                return;
+            }
+            var str = text.value;
+            var op = { "operate": OPERATE.LOG_IN, "name": str };
             webSocket.send(JSON.stringify(op));
         }
         function createroom() {
-            var op = { "operate": 2, "pid": pid };
+            var op = { "operate": OPERATE.CREATE_ROOM, "from_pid": pid };
+            console.log(op);
             webSocket.send(JSON.stringify(op));
         }
-        function getpeers() {
-            var op = { "operate": OPERATE.GET_PEERS_IN_ROOM, "rid": rid, "pid": pid };
+        function getAllPeers() {
+            var op = { "operate": OPERATE.GET_ALL_PEERS, "from_pid": pid };
             webSocket.send(JSON.stringify(op));
         }
+
+        function call() {
+            var str = text.value;
+            var id = parseInt(str);
+            if (isNaN(id)) {
+                alert("请输入整数");
+                return
+            }
+            if (!inRoom) {
+                alert("请先加入房间");
+                return
+            }
+            var op = { "operate": OPERATE.CALL, "from_pid": pid, "dest_pid": id, "rid": rid }
+            webSocket.send(JSON.stringify(op));
+
+        }
+        function invite() {
+            var str = text.value;
+            var id = parseInt(str);
+            if (isNaN(id)) {
+                alert("请输入整数");
+                return
+            }
+            if (!inRoom) {
+                alert("请先加入房间");
+                return
+            }
+            var op = { "operate": OPERATE.INVITE, "from_pid": pid, "dest_pid": id, "rid": rid }
+            webSocket.send(JSON.stringify(op));
+        }
+        function joinsession() {
+            var op = { "operate": OPERATE.JOIN_SESSION, "from_pid": pid, "rid": rid }
+            webSocket.send(JSON.stringify(op));
+        }
+
+        async function openScreen() {
+            if (currentVideo == VideoType.SCREEN) {
+                alert("already open screen");
+                return;
+            }
+
+            var op = { "operate": OPERATE.OPEN_SCREEN, "from_pid": pid, "rid": rid }
+            webSocket.send(JSON.stringify(op))
+
+            if (currentVideo == VideoType.CAMERA) {
+                var op = { "operate": OPERATE.CLOSE_CAMERA, "from_pid": pid, "rid": rid }
+                webSocket.send(JSON.stringify(op))
+            }
+
+            screenStream = await navigator.mediaDevices.getDisplayMedia(
+            );
+            localVideo.srcObject = screenStream;
+            videoSender.replaceTrack(screenStream.getVideoTracks()[0]);
+            currentVideo = VideoType.SCREEN
+        }
+
+        async function openCamera() {
+            if (currentVideo == VideoType.CAMERA) {
+                alert("already open camera");
+                return;
+            }
+
+            var op = { "operate": OPERATE.OPEN_CAMERA, "from_pid": pid, "rid": rid }
+            webSocket.send(JSON.stringify(op))
+
+            if (currentVideo == VideoType.SCREEN) {
+                var op = { "operate": OPERATE.CLOSE_SCREEN, "from_pid": pid, "rid": rid }
+                webSocket.send(JSON.stringify(op))
+            }
+
+            videoSender.replaceTrack(camStream.getVideoTracks()[0]);
+            localVideo.srcObject = camStream;
+            currentVideo = VideoType.CAMERA
+        }
+
+        function closeVideo() {
+            if (currentVideo == VideoType.CAMERA) {
+                var op = { "operate": OPERATE.CLOSE_CAMERA, "from_pid": pid, "rid": rid }
+                webSocket.send(JSON.stringify(op))
+            }
+            else if (currentVideo == VideoType.SCREEN) {
+                var op = { "operate": OPERATE.CLOSE_SCREEN, "from_pid": pid, "rid": rid }
+                webSocket.send(JSON.stringify(op))
+            }
+
+            videoSender.replaceTrack(null)
+            localVideo.srcObject = null;
+            currentVideo = VideoType.NULL
+        }
+
+        function openAudio() {
+            if (currentAudio == AudioType.OPEN) {
+                alert("already open audio");
+                return;
+            }
+            var op = { "operate": OPERATE.OPEN_AUDIO, "from_pid": pid, "rid": rid }
+            webSocket.send(JSON.stringify(op))
+            audioSender.replaceTrack(camStream.getVideoTracks()[0]);
+            currentAudio = AudioType.OPEN
+        }
+
+        function closeAudio() {
+            if (currentAudio == AudioType.OPEN) {
+                var op = { "operate": OPERATE.CLOSE_AUDIO, "from_pid": pid, "rid": rid }
+                webSocket.send(JSON.stringify(op))
+            }
+            audioSender.replaceTrack(null)
+            currentAudio = AudioType.NULL
+        }
+
+        window.onbeforeunload = function (e) {
+            if (inSession) {
+                var op = { "operate": OPERATE.LEFT_SESSION, "rid": rid, "from_pid": pid };
+                webSocket.send(JSON.stringify(op));
+                inSession = false;
+            }
+            if (inRoom) {
+                var op = { "operate": OPERATE.LEFT_ROOM, "rid": rid, "from_pid": pid }
+                webSocket.send(JSON.stringify(op));
+                inRoom = false;
+            }
+            if (isLog) {
+                var op = { "operate": OPERATE.LOG_OUT, "from_pid": pid }
+                webSocket.send(JSON.stringify(op));
+                isLog = false;
+            }
+            //request(duration);
+        };
 
 
     </script>
