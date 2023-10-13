@@ -4,6 +4,7 @@
 #include <memory>
 #include <mutex>
 #include <unordered_map>
+#include <atomic>
 
 #include "log4cxx/log4cxx.h"
 #include "log4cxx/logger.h"
@@ -53,17 +54,23 @@ public:
     bool closeAudio(int64_t from_pid);
 
 private:
+
+    int64_t id_;
+    
+    std::unordered_map<int64_t, std::shared_ptr<Peer>> *peers_;
+    std::mutex *mu_;
+    std::atomic<int32_t> count_;
+    std::string start_time_;
+    std::string end_time_;
+
+    static log4cxx::LoggerPtr logger_;
+    
     std::shared_ptr<Peer> getPeer(int64_t pid);
     bool sendSignal(std::shared_ptr<Peer> &from, std::shared_ptr<Peer> &dest,
                     const std::string &type,
                     const std::vector<std::string> &kvs = {});
     bool sendSignal(std::shared_ptr<Peer> &peer, const std::string &type,
                     const std::vector<std::string> &kvs = {});
-
-    std::unordered_map<int64_t, std::shared_ptr<Peer>> *peers_;
-    std::mutex *mu_;
-    int64_t id_;
-    static log4cxx::LoggerPtr logger_;
 };
 
 #endif  // _SESSION_H_

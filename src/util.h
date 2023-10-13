@@ -17,4 +17,6 @@ void response(Type::connection_ptr con, const std::string &msg,
 
 std::string getString(const rapidjson::Document &doc);
 
+std::string nowTime();
+
 #endif  // _UTIL_H_

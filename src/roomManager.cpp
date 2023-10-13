@@ -134,7 +134,8 @@ void RoomManager::getPeersInRoom(Type::connection_ptr con, int64_t rid,
                                        << " want to get peers in room" << rid);
     std::shared_ptr<Room> room = getRoom(rid);
     if (!room) {
-        response(con, "room not found");
+        LOG4CXX_INFO(logger_, "room not exist, rid: " << rid);
+        response(con, "room not exist!");
         return;
     }
     rapidjson::Document d;
@@ -265,6 +266,11 @@ void RoomManager::getSessionStatus(Type::connection_ptr con, int64_t rid) {
         "ip: " << con->get_remote_endpoint()
                << " want to getSessionStatus session in room: " << rid);
     std::shared_ptr<Room> room = getRoom(rid);
+    if (!room) {
+        LOG4CXX_INFO(logger_, "room not exist, rid: " << rid);
+        response(con, "room not exist!");
+        return;
+    }
     rapidjson::Document d;
     room->session_.getSessionStatus(d);
     d.AddMember("msg", "success", d.GetAllocator());
@@ -336,6 +342,11 @@ void RoomManager::connected(Type::connection_ptr con, int64_t rid,
     LOG4CXX_INFO(logger_,
                  "from_pid: " << from_pid << " success connected." << rid);
     std::shared_ptr<Room> room = getRoom(rid);
+    if (!room) {
+        LOG4CXX_INFO(logger_, "room not exist, rid: " << rid);
+        response(con, "room not exist!");
+        return;
+    }
     room->session_.connected(from_pid);
 }
 
@@ -347,6 +358,8 @@ void RoomManager::openCamera(Type::connection_ptr con, int64_t rid,
     std::shared_ptr<Room> room = getRoom(rid);
     if (!room) {
         LOG4CXX_INFO(logger_, "room not exist, rid: " << rid);
+        response(con, "room not exist!");
+        return;
     }
     room->session_.openCamera(from_pid);
 }
@@ -359,6 +372,8 @@ void RoomManager::closeCamera(Type::connection_ptr con, int64_t rid,
     std::shared_ptr<Room> room = getRoom(rid);
     if (!room) {
         LOG4CXX_INFO(logger_, "room not exist, rid: " << rid);
+        response(con, "room not exist!");
+        return;
     }
     room->session_.closeCamera(from_pid);
 }
@@ -371,6 +386,8 @@ void RoomManager::openScreen(Type::connection_ptr con, int64_t rid,
     std::shared_ptr<Room> room = getRoom(rid);
     if (!room) {
         LOG4CXX_INFO(logger_, "room not exist, rid: " << rid);
+        response(con, "room not exist!");
+        return;
     }
     room->session_.openScreen(from_pid);
 }
@@ -383,6 +400,8 @@ void RoomManager::closeScreen(Type::connection_ptr con, int64_t rid,
     std::shared_ptr<Room> room = getRoom(rid);
     if (!room) {
         LOG4CXX_INFO(logger_, "room not exist, rid: " << rid);
+        response(con, "room not exist!");
+        return;
     }
     room->session_.closeScreen(from_pid);
 }
@@ -395,6 +414,8 @@ void RoomManager::openAudio(Type::connection_ptr con, int64_t rid,
     std::shared_ptr<Room> room = getRoom(rid);
     if (!room) {
         LOG4CXX_INFO(logger_, "room not exist, rid: " << rid);
+        response(con, "room not exist!");
+        return;
     }
     room->session_.openAudio(from_pid);
 }
@@ -407,6 +428,8 @@ void RoomManager::closeAudio(Type::connection_ptr con, int64_t rid,
     std::shared_ptr<Room> room = getRoom(rid);
     if (!room) {
         LOG4CXX_INFO(logger_, "room not exist, rid: " << rid);
+        response(con, "room not exist!");
+        return;
     }
     room->session_.closeAudio(from_pid);
 }

@@ -2,6 +2,8 @@
 #define _PEERSTATUS_H_
 
 #include <cstdint>
+#include <string>
+
 // peer status about room/session
 class PeerStatus {
 public:
@@ -67,6 +69,8 @@ public:
 
     void setConnected(bool connected);
 
+    std::string join_time_;
+    std::string left_time_;
 private:
     int64_t room_id_;
     bool isInSession_;
@@ -87,5 +91,4 @@ private:
     bool connected_;
 };
 
-
-#endif // _PEERSTATUS_H_
+#endif  // _PEERSTATUS_H_

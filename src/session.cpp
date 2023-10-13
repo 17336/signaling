@@ -1,21 +1,35 @@
 #include "session.h"
 
+#include "sessionDumper.h"
 #include "util.h"
 
 log4cxx::LoggerPtr Session::logger_ = log4cxx::Logger::getLogger("processor");
 
 Session::Session(std::unordered_map<int64_t, std::shared_ptr<Peer>> *peers,
                  std::mutex *mu, int64_t room_id)
-    : peers_(peers), mu_(mu), id_(room_id) {}
+    : peers_(peers),
+      mu_(mu),
+      id_(room_id),
+      count_(0),
+      start_time_(),
+      end_time_() {}
 
 Session &Session::operator=(const Session &other) {
     this->peers_ = other.peers_;
     this->mu_ = other.mu_;
     this->id_ = other.id_;
+    this->count_.store(other.count_.load());
+    this->start_time_ = other.start_time_;
+    this->end_time_ = other.end_time_;
     return *this;
 }
 
 bool Session::call(int64_t from_pid, int64_t dest_pid) {
+    if (count_.load() != 0) {
+        LOG4CXX_WARN(logger_,
+                     "already have user in session, join instead call.");
+        return false;
+    }
     std::shared_ptr<Peer> from;
     std::shared_ptr<Peer> dest;
     if (!(from = getPeer(from_pid)) || !(dest = getPeer(dest_pid))) {
@@ -38,6 +52,12 @@ bool Session::callAccept(int64_t from_pid, int64_t dest_pid) {
     }
     from->peer_status_.setIsInSession(true);
     dest->peer_status_.setIsInSession(true);
+    std::string now = nowTime();
+    from->peer_status_.join_time_ = now;
+    dest->peer_status_.join_time_ = now;
+    if (count_.fetch_add(2) == 0) {
+        start_time_ = now;
+    }
     return this->sendSignal(from, dest, "callAccept");
 }
 
@@ -74,6 +94,11 @@ bool Session::inviteAccept(int64_t from_pid, int64_t dest_pid) {
         return false;
     }
     from->peer_status_.setIsInSession(true);
+    std::string now = nowTime();
+    from->peer_status_.join_time_ = now;
+    if (count_.fetch_add(1) == 0) {
+        start_time_ = now;
+    }
     return this->sendSignal(from, dest, "inviteAccept") &&
            this->sendSignal(from, "joinSession");
 }
@@ -95,6 +120,11 @@ bool Session::joinSession(int64_t from_pid) {
         LOG4CXX_WARN(logger_, "not in room peer id: " << from_pid);
         return false;
     }
+    std::string now = nowTime();
+    from->peer_status_.join_time_ = now;
+    if (count_.fetch_add(1) == 0) {
+        start_time_ = now;
+    }
     from->peer_status_.setIsInSession(true);
     return this->sendSignal(from, "joinSession");
 }
@@ -106,14 +136,31 @@ bool Session::leftSession(int64_t from_pid) {
         return false;
     }
     from->peer_status_.setIsInSession(false);
-    std::lock_guard<std::mutex> lock(*mu_);
-    for (auto &p : *peers_) {
-        if (p.second->peer_status_.isInSession()) {
-            return true;
-        }
-    }
+    LOG4CXX_DEBUG(logger_, "join time" << from->peer_status_.join_time_);
+    std::string now = nowTime();
+    from->peer_status_.left_time_ = now;
     // todo: here send to sql and reset.
-
+    if (count_.fetch_sub(1) == 1) {
+        std::lock_guard<std::mutex> lock(*mu_);
+        LOG4CXX_INFO(logger_, "all user left session, will dump");
+        end_time_ = nowTime();
+        auto dumper = SessionDumper::getInstance();
+        SessionLog log;
+        log.room_id_ = id_;
+        log.start_time_ = start_time_;
+        log.end_time_ = end_time_;
+        for (auto &p : *peers_) {
+            if (p.second->peer_status_.wasInSession()) {
+                log.peers.push_back(
+                    {p.second->id(), p.second->name(), p.second->ip()});
+                log.statuses.push_back(p.second->peer_status_);
+            }
+            p.second->peer_status_.reset();
+            start_time_.clear();
+            end_time_.clear();
+        }
+        dumper->addSessionLog(log);
+    }
     return true;
 }
 

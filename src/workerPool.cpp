@@ -38,7 +38,7 @@ void WorkerPool::run() {
     Context context;
     while (start_) {
         if (!input_.get(&context, 30000)) {
-            LOG4CXX_WARN(logger_, "No context in input");
+            LOG4CXX_INFO(logger_, "No context in input");
             continue;
         }
         try {

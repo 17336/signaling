@@ -16,6 +16,7 @@ sigServer::sigServer() : workers_() {
     // Initialize Asio Transport
     m_server_.init_asio();
 
+    m_server_.set_reuse_addr(true);
     // Register handler callbacks
     m_server_.set_message_handler(
         bind(&sigServer::on_message, this, ::_1, ::_2));
@@ -31,7 +32,6 @@ void sigServer::run(uint16_t port) {
     // Start the ASIO io_service run loop
     try {
         workers_.start();
-        m_server_.set_reuse_addr(true);
         m_server_.run();
     } catch (const std::exception &e) {
         workers_.stop();

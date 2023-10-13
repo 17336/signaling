@@ -39,5 +39,14 @@ else()
     message(ERROR "loc4cxx not found")
 endif()
 
+find_library(MYSQLCPPCONN mysqlcppconn)
+
+if(MYSQLCPPCONN)
+    message(STATUS "Found mysqlcppconn: ${MYSQLCPPCONN}")
+    target_link_libraries(signaling PUBLIC ${MYSQLCPPCONN})
+else()
+    message(FATAL_ERROR "mysqlcppconn not found")
+endif()
+
 find_package(RapidJSON REQUIRED)
 target_include_directories(signaling PUBLIC ${RapidJSON_INCLUDE_DIRS})
