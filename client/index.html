@@ -18,6 +18,7 @@
         <input type="submit" value="call" onclick="call()" />
         <input type="submit" value="invite" onclick="invite()" />
         <input type="submit" value="join session" onclick="joinsession()" />
+        <input type="submit" value="left session" onclick="leftsession()" />
 
         <input type="submit" value="打开屏幕共享" onclick="openScreen()" />
         <input type="submit" value="打开摄像头" onclick="openCamera()" />
@@ -181,6 +182,9 @@
                 else if (j.type == "callAccept" || j.type == "joinSession") {
                     document.getElementById('messages').innerHTML
                         += '<br />' + "remote id: " + j.from_pid + " join in session";
+                    if(j.type=="callAccept") {
+                        inSession = true;
+                    }
                     remote_pid = j.from_pid;
                     startCall();
                 }
@@ -569,6 +573,12 @@
         }
         function joinsession() {
             var op = { "operate": OPERATE.JOIN_SESSION, "from_pid": pid, "rid": rid }
+            webSocket.send(JSON.stringify(op));
+        }
+
+        
+        function leftsession() {
+            var op = { "operate": OPERATE.LEFT_SESSION, "from_pid": pid, "rid": rid }
             webSocket.send(JSON.stringify(op));
         }
 
